@@ -105,7 +105,7 @@ class AppMain ( wx.Frame ):
 		
 		self.m_notebook1 = wx.Notebook( self, wx.ID_ANY, wx.DefaultPosition, wx.Size( -1,370 ), wx.NB_FIXEDWIDTH|wx.NB_TOP )
 		self.m_panel1 = wx.Panel( self.m_notebook1, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.TAB_TRAVERSAL )
-		self.m_panel1.SetBackgroundColour( wx.SystemSettings.GetColour( wx.SYS_COLOUR_WINDOW ) )
+		self.m_panel1.SetBackgroundColour( wx.SystemSettings.GetColour( wx.SYS_COLOUR_MENU ) )
 		
 		bSizer3 = wx.BoxSizer( wx.VERTICAL )
 		
@@ -118,7 +118,7 @@ class AppMain ( wx.Frame ):
 		bSizer3.Fit( self.m_panel1 )
 		self.m_notebook1.AddPage( self.m_panel1, u"MCU Info", True )
 		self.m_panel2 = wx.Panel( self.m_notebook1, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.TAB_TRAVERSAL )
-		self.m_panel2.SetBackgroundColour( wx.SystemSettings.GetColour( wx.SYS_COLOUR_WINDOW ) )
+		self.m_panel2.SetBackgroundColour( wx.SystemSettings.GetColour( wx.SYS_COLOUR_MENU ) )
 		
 		fgSizer4 = wx.FlexGridSizer( 2, 0, 0, 0 )
 		fgSizer4.AddGrowableCol( 0 )
@@ -163,7 +163,7 @@ class AppMain ( wx.Frame ):
 		fgSizer4.Fit( self.m_panel2 )
 		self.m_notebook1.AddPage( self.m_panel2, u"Data Buffer", False )
 		self.m_panel5 = wx.Panel( self.m_notebook1, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.TAB_TRAVERSAL )
-		self.m_panel5.SetBackgroundColour( wx.SystemSettings.GetColour( wx.SYS_COLOUR_WINDOW ) )
+		self.m_panel5.SetBackgroundColour( wx.SystemSettings.GetColour( wx.SYS_COLOUR_MENU ) )
 		
 		bSizer51 = wx.BoxSizer( wx.VERTICAL )
 		
@@ -178,7 +178,7 @@ class AppMain ( wx.Frame ):
 		bSizer51.Fit( self.m_panel5 )
 		self.m_notebook1.AddPage( self.m_panel5, u"CMD Options", False )
 		self.m_panel7 = wx.Panel( self.m_notebook1, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.TAB_TRAVERSAL )
-		self.m_panel7.SetBackgroundColour( wx.SystemSettings.GetColour( wx.SYS_COLOUR_WINDOW ) )
+		self.m_panel7.SetBackgroundColour( wx.SystemSettings.GetColour( wx.SYS_COLOUR_MENU ) )
 		
 		fgSizer3 = wx.FlexGridSizer( 2, 0, 0, 0 )
 		fgSizer3.AddGrowableCol( 0 )

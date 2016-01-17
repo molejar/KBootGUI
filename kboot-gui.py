@@ -28,12 +28,10 @@ import wx.propgrid as pg
 import wx.dataview as dw
 
 from gui import AppMain
-from kboot import KBoot, Property, Status, SRecFile
+from kboot import *
+from intelhex import IntelHex
+from flufl.enum import IntEnum
 
-try:
-    from intelhex import IntelHex
-except ImportError:
-    pass
 
 mylogger = logging.getLogger()
 
@@ -61,24 +59,31 @@ class WorkerThread(threading.Thread):
     def __init__(self, *args, **kwargs):
         """Init Worker Thread Class."""
         threading.Thread.__init__(self)
-        self._notify_window = args[0]
-        self._want_abort = 0
-        self._cmd_type = args[1]
-        self._func = args[2]
-        self._args = kwargs
+        self.__notify_window = args[0]
+        self.__want_abort = 0
+        self.__cmd  = args[1]
+        self.__func = args[2]
+        self.__args = kwargs
 
     def run(self):
         """Run Worker Thread."""
-        if self._cmd_type == 'read':
-            status, data = self._func(self._args['saddr'], self._args['len'])
-            wx.PostEvent(self._notify_window, ResultEvent(cmd=self._cmd_type, status=status, data=data))
-        else:
-            status = self._func(self._args['saddr'], self._args['data'])
-            wx.PostEvent(self._notify_window, ResultEvent(cmd=self._cmd_type, status=status))
+        status = 0
+        data = []
+        try:
+            if self.__cmd == CMD.Read:
+                data = self.__func(self.__args['saddr'], self.__args['len'])
+            else:
+                self.__func(self.__args['saddr'], self.__args['data'])
+        except (KBootTimeoutError, KBootConnectionError):
+            status = -1
+        except:
+            status = 1
+        # Execute CallBack Event
+        wx.PostEvent(self.__notify_window, ResultEvent(cmd=self.__cmd, status=status, data=data))
 
     def abort(self):
         """abort worker thread."""
-        self._want_abort = 1
+        self.__want_abort = 1
 
 
 class WxTextCtrlHandler(logging.Handler):
@@ -119,10 +124,26 @@ class Timer:
         return "{0:02d}:{1:02d}.{2:03d}".format(m, s, ms)
 
 
+class CMD(IntEnum):
+    Read   = 0x01
+    Write  = 0x02
+    Erase  = 0x03
+    Unlock = 0x04
+    Reset  = 0x05
+
+
 class KBootAppMain(AppMain):
+    # Connected MCU Params
     FlashStartAddress = 0
     FlashSize = 0
-    Offset = 0
+    FlashSectorSize = 0
+
+    # Actual CMD Params
+    WR_Offset = 0
+    ER_StartAddr = 0
+    ER_Len = 0
+    RD_StartAddr = 0
+    RD_Len = 0
 
     def __init__(self, parent):
         AppMain.__init__(self, parent)
@@ -145,7 +166,7 @@ class KBootAppMain(AppMain):
         self.scan_for_dev()
         # -------
         self.m_dvlcMcuInfo.AppendTextColumn('Parameter', width=150, flags=dw.DATAVIEW_COL_SORTABLE)
-        self.m_dvlcMcuInfo.AppendTextColumn('Value', width=350)
+        self.m_dvlcMcuInfo.AppendTextColumn('Value', width=500)
         # -------
         self.m_dvlcDataBuff.AppendTextColumn("Address", width=95, align=wx.ALIGN_CENTER, flags=16)
         for i in range(16):
@@ -154,31 +175,35 @@ class KBootAppMain(AppMain):
             self.m_dvlcDataBuff.AppendTextColumn("{:01X}".format(i), width=26, align=wx.ALIGN_CENTER, flags=16)
         self.m_dvlcDataBuff.AppendTextColumn("0123456789ABCDEF", width=140, align=wx.ALIGN_CENTER)
         # -------
-        self.m_pErase = self.m_pGridOptions.Append( pg.PropertyCategory( u"Erase CMD", u"EraseCMD" ) )
-        self.m_pEDef = self.m_pGridOptions.Append( pg.EnumProperty( u"Mode", u"Mode",
-                                                                    ['Mass Erase', 'Sector Erase'], [0, 1], 0 ) )
-        self.m_pESSector = self.m_pGridOptions.Append( pg.UIntProperty( u"Start Sector", u"StartSector" ) )
-        self.m_pEESector = self.m_pGridOptions.Append( pg.UIntProperty( u"End Sector", u"EndSector" ) )
-        self.m_pWrite = self.m_pGridOptions.Append( pg.PropertyCategory( u"Write CMD", u"WriteCMD" ) )
-        self.m_pWOffset = self.m_pGridOptions.Append( pg.StringProperty( u"Offset", u"WROffset", "0x0" ) )
-        self.m_pWErase = self.m_pGridOptions.Append( pg.EnumProperty( u"Erase Befor Write ?", u"EraseBeforWrite",
-                                                                      ['Yes (Mass Erase)', 'Yes (Sector Erase)', 'No'],
-                                                                      [0, 1, 2], 0 ) )
-        self.m_pRead = self.m_pGridOptions.Append( pg.PropertyCategory( u"Read CMD", u"ReadCMD" ) )
-        self.m_pRSAddr = self.m_pGridOptions.Append( pg.StringProperty( u"Start Address", u"RDStartAddress" ) )
-        self.m_pRLen = self.m_pGridOptions.Append( pg.StringProperty( u"Length", u"RDLength" ) )
+        self.m_pErase = self.m_pGridOptions.Append(pg.PropertyCategory(u"Erase CMD", u"EraseCMD"))
+        self.m_pEDef = self.m_pGridOptions.Append(pg.EnumProperty(u"Mode", u"Mode",
+                                                                  ['Mass Erase', 'Sector Erase'], [0, 1], 0))
+        self.m_pESAddr = self.m_pGridOptions.Append(pg.StringProperty(u"Start Address", u"ESAddr", "0x0"))
+        self.m_pELen = self.m_pGridOptions.Append(pg.StringProperty(u"Length", u"ELen", "0x0"))
+        self.m_pESAddr.Enable(False)
+        self.m_pELen.Enable(False)
+        self.m_pWrite = self.m_pGridOptions.Append(pg.PropertyCategory(u"Write CMD", u"WriteCMD"))
+        self.m_pWOffset = self.m_pGridOptions.Append(pg.StringProperty(u"Offset", u"WROffset", "0x0"))
+        self.m_pWErase = self.m_pGridOptions.Append(pg.EnumProperty(u"Erase Befor Write ?", u"EraseBeforWrite",
+                                                                    ['Yes (Mass Erase)', 'Yes (Sector Erase)', 'No'],
+                                                                    [0, 1, 2], 0))
+        self.m_pRead = self.m_pGridOptions.Append(pg.PropertyCategory(u"Read CMD", u"ReadCMD"))
+        self.m_pRSAddr = self.m_pGridOptions.Append(pg.StringProperty(u"Start Address", u"RSAddr", "0x0"))
+        self.m_pRLen = self.m_pGridOptions.Append(pg.StringProperty(u"Length", u"RLen", "0x0"))
+        self.m_pGridOptions.Disable()
+        #self.m_pGridOptions.Show(False)
         # -------
-        self.m_dvlcDataBuff.SetForegroundColour( wx.Colour( 10, 145, 40 ) )
-        self.m_dvlcDataBuff.SetBackgroundColour( wx.Colour( 32, 32, 32 ) )
-        self.m_tcLogger.SetForegroundColour( wx.Colour( 10, 185, 80 ) )
-        self.m_tcLogger.SetBackgroundColour( wx.Colour( 32, 32, 32 ) )
+        self.m_dvlcDataBuff.SetForegroundColour(wx.Colour(10, 145, 40))
+        self.m_dvlcDataBuff.SetBackgroundColour(wx.Colour(32, 32, 32))
+        self.m_tcLogger.SetForegroundColour(wx.Colour(10, 185, 80))
+        self.m_tcLogger.SetBackgroundColour(wx.Colour(32, 32, 32))
         # -------
         if os.name == "posix":
-            self.m_dvlcDataBuff.SetFont( wx.Font( 10, 70, 90, 90, False, "Droid Sans Mono" ) )
-            self.m_tcLogger.SetFont( wx.Font( 9, 70, 90, 90, False, "Droid Sans Mono" ) )
+            self.m_dvlcDataBuff.SetFont(wx.Font(10, 70, 90, 90, False, "Droid Sans Mono"))
+            self.m_tcLogger.SetFont(wx.Font(9, 70, 90, 90, False, "Droid Sans Mono"))
         else:
-            self.m_dvlcDataBuff.SetFont( wx.Font( 10, 75, 90, 90, False, "Lucida Console" ) )
-            self.m_tcLogger.SetFont( wx.Font( 9, 75, 90, 90, False, "Lucida Console" ) )
+            self.m_dvlcDataBuff.SetFont(wx.Font( 10, 75, 90, 90, False, "Lucida Console"))
+            self.m_tcLogger.SetFont(wx.Font(9, 75, 90, 90, False, "Lucida Console"))
         # -------
         self.m_tcTime.SetValue('Time')
         self.m_tcTime.Disable()
@@ -190,6 +215,8 @@ class KBootAppMain(AppMain):
         self.m_gProgBar.SetRange(1000)
         self.kboot.set_handler(self.update_progressbar, 0, self.m_gProgBar.GetRange())
 
+        self.m_pGridOptions.Bind(pg.EVT_PG_CHANGED, self.OnCmdOpsChanger)
+
     def __del__(self):
         if self.worker:
             self.worker.join()
@@ -197,6 +224,8 @@ class KBootAppMain(AppMain):
         self.kboot.disconnect()
 
     def ctrlbt_enable(self):
+        self.m_pGridOptions.Enable()
+        #self.m_pGridOptions.Show(True)
         self.m_bReset.Enable()
         self.m_bErase.Enable()
         self.m_bUnlock.Enable()
@@ -205,6 +234,8 @@ class KBootAppMain(AppMain):
             self.m_bWrite.Enable()
 
     def ctrlbt_disable(self):
+        self.m_pGridOptions.Disable()
+        #self.m_pGridOptions.Show(False)
         self.m_bReset.Disable()
         self.m_bErase.Disable()
         self.m_bUnlock.Disable()
@@ -316,11 +347,22 @@ class KBootAppMain(AppMain):
 
                 if mcuinfo.has_key(Property.FlashStartAddress.name):
                     self.FlashStartAddress = mcuinfo[Property.FlashStartAddress.name]['raw_value']
-                    self.m_pRSAddr.SetValue('0x{:X}'.format(self.FlashStartAddress))
 
                 if mcuinfo.has_key(Property.FlashSize.name):
                     self.FlashSize = mcuinfo[Property.FlashSize.name]['raw_value']
-                    self.m_pRLen.SetValue('0x{:X}'.format(self.FlashSize))
+
+                if mcuinfo.has_key(Property.FlashSectorSize.name):
+                    self.FlashSectorSize = mcuinfo[Property.FlashSectorSize.name]['raw_value']
+
+                self.ER_StartAddr = self.FlashStartAddress
+                self.m_pESAddr.SetValue('0x{:X}'.format(self.ER_StartAddr))
+                self.ER_Len = self.FlashSize
+                self.m_pELen.SetValue('0x{:X}'.format(self.ER_Len))
+
+                self.RD_StartAddr = self.FlashStartAddress
+                self.m_pRSAddr.SetValue('0x{:X}'.format(self.RD_StartAddr))
+                self.RD_Len = self.FlashSize
+                self.m_pRLen.SetValue('0x{:X}'.format(self.RD_Len))
                 return True
             else:
                 self.task_end(False)
@@ -468,58 +510,70 @@ class KBootAppMain(AppMain):
         event.Skip()
 
     def OnReset(self, event):
-        if self.kboot.is_connected():
-            # Call KBoot MCU reset function
-            status = self.kboot.reset()
-            self.disconnect()
+        self.kboot.reset()
+        self.disconnect()
         event.Skip()
 
     def OnUnlock(self, event):
-        if self.kboot.is_connected():
-            self.task_begin()
-            # Call KBoot flash erase all and unsecure function
-            status = self.kboot.flash_erase_all_unsecure()
-            self.task_end(status == Status.Success)
+        self.task_begin()
+        try:
+            self.kboot.flash_erase_all_unsecure()
+        except:
+            self.task_end(False)
+        else:
+            self.task_end(True)
         event.Skip()
 
     def OnErase(self, event):
-        if self.kboot.is_connected():
-            self.task_begin()
-            # Call KBoot flash erase all function
-            status = self.kboot.flash_erase_all()
-            self.task_end(status == Status.Success)
+        self.task_begin()
+        try:
+            if self.m_pErase.GetValue() == 0:
+                self.kboot.flash_erase_all_unsecure()
+            else:
+                self.kboot.flash_erase_region(self.ER_StartAddr, self.ER_Len)
+        except:
+            self.task_end(False)
+        else:
+            self.task_end(True)
         event.Skip()
 
     def OnWrite(self, event):
         if self.kboot.is_connected():
-            saddr = self.FlashStartAddress + self.Offset
-            #status = kboot.flash_erase_region(saddr, dlen)
+            saddr = self.FlashStartAddress + self.WR_Offset
             self.ctrlbt_disable()
             self.task_begin('Writing')
-            status = self.kboot.flash_erase_all_unsecure()
-            if status == Status.Success:
-                self.worker = WorkerThread(self, 'write', self.kboot.write_memory, saddr=saddr, data=self.data_buffer)
-                self.worker.start()
-            else:
+            try:
+                if self.m_pWErase.GetValue() == 0:
+                    self.kboot.flash_erase_all_unsecure()
+                elif self.m_pWErase.GetValue() == 1:
+                    esaddr = (saddr & ~(self.FlashSectorSize - 1))
+                    eslen = (len(self.data_buffer) & ~(self.FlashSectorSize - 1))
+                    if (len(self.data_buffer) % self.FlashSectorSize) > 0:
+                        eslen += self.FlashSectorSize
+                    self.kboot.flash_erase_region(esaddr, eslen)
+                else:
+                    logging.info('Writing without erase')
+            except:
                 self.task_end(False)
+            else:
+                self.worker = WorkerThread(self, CMD.Write, self.kboot.write_memory, saddr=saddr, data=self.data_buffer)
+                self.worker.start()
         event.Skip()
 
     def OnRead(self, event):
-        if self.kboot.is_connected():
-            self.start_addr = int(self.m_pRSAddr.GetValue(), 0)
-            dlen  = int(self.m_pRLen.GetValue(), 0)
-            self.ctrlbt_disable()
-            self.task_begin('Reading')
-            self.worker = WorkerThread(self, 'read', self.kboot.read_memory, saddr=self.start_addr, len=dlen)
-            self.worker.start()
-            event.Skip()
+        self.start_addr = self.RD_StartAddr
+        self.ctrlbt_disable()
+        self.task_begin('Reading')
+        self.worker = WorkerThread(self, CMD.Read, self.kboot.read_memory, saddr=self.start_addr, len=self.RD_Len)
+        self.worker.start()
+        event.Skip()
 
     def OnResult(self, event):
         """Show Result status."""
         if event.data:
-            if event.data['status'] == Status.Success:
+            if event.data['status'] == 0:
                 self.task_end()
-                if event.data['cmd'] == 'read':
+                if event.data['cmd'] == CMD.Read:
                     self.data_buffer = event.data['data']
                     self.show_buffer(self.start_addr)
                     self.m_bpSave.Enable()
@@ -532,6 +586,56 @@ class KBootAppMain(AppMain):
                 if event.data['status'] == -1:
                     self.disconnect()
         self.worker = None
+
+    def OnCmdOpsChanger(self, event):
+        prop = event.GetProperty()
+        if prop.GetValueType() == 'string':
+            getval = prop.GetValue()
+            try:
+                val = int(getval, 0)
+            except:
+                if prop.GetName() == 'ESAddr':
+                    prop.SetValue('0x{:X}'.format(self.ER_StartAddr))
+                elif prop.GetName() == 'ELen':
+                    prop.SetValue('0x{:X}'.format(self.ER_Len))
+                elif prop.GetName() == 'Offset':
+                    prop.SetValue('0x{:X}'.format(self.WR_Offset))
+                elif prop.GetName() == 'RSAddr':
+                    prop.SetValue('0x{:X}'.format(self.RD_StartAddr))
+                elif prop.GetName() == 'RLen':
+                    prop.SetValue('0x{:X}'.format(self.RD_Len))
+                wx.MessageBox(" Value \"%s\" hasn\'t correct type !\n\n Use decimal (0...) or hex (0x...) chars"
+                              % getval, 'ERROR', wx.OK|wx.ICON_ERROR)
+            else:
+                if prop.GetName() == 'ESAddr':
+                    if (val % self.FlashSectorSize) > 0:
+                        prop.SetValue('0x{:X}'.format(self.ER_StartAddr))
+                        wx.MessageBox(" Start Address Value for Erase CMD must be\n aligned to Flash Sector Size: 0x%X "
+                                      % self.FlashSectorSize, 'ERROR', wx.OK|wx.ICON_ERROR)
+                    else:
+                        self.ER_StartAddr = val
+                elif prop.GetName() == 'ELen':
+                    if (val % self.FlashSectorSize) > 0:
+                        prop.SetValue('0x{:X}'.format(self.ER_Len))
+                        wx.MessageBox(" Length Value for Erase CMD must be\n aligned to Flash Sector Size: 0x%X "
+                                      % self.FlashSectorSize, 'ERROR', wx.OK|wx.ICON_ERROR)
+                    else:
+                        self.ER_Len = val
+                elif prop.GetName() == 'Offset':
+                    self.WR_Offset = val
+                elif prop.GetName() == 'RSAddr':
+                    self.RD_StartAddr = val
+                elif prop.GetName() == 'RLen':
+                    self.RD_Len = val
+
+        if prop.GetName() == 'Mode':
+            if prop.GetValue() == 0:
+                self.m_pESAddr.Enable(False)
+                self.m_pELen.Enable(False)
+            else:
+                self.m_pESAddr.Enable(True)
+                self.m_pELen.Enable(True)
+
 
     def OnLeaveLogger(self, event):
         self.m_tcLogger.SetInsertionPoint(self.m_tcLogger.GetLastPosition())
