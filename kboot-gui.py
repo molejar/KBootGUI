@@ -150,7 +150,7 @@ class KBootAppMain(AppMain):
         #self.SetIcon(wx.Icon('mcu.png', wx.PNG_TYPE_COLOUR, 16, 16))
         handler = WxTextCtrlHandler(self.m_tcLogger)
         mylogger.addHandler(handler)
-        FORMAT = "[%(asctime)s %(levelname)-5s]  %(message)s"
+        FORMAT = "[%(asctime)s.%(msecs)03d %(levelname)-5s] %(message)s"
         handler.setFormatter(logging.Formatter(FORMAT, datefmt='%M:%S'))
         mylogger.setLevel(logging.DEBUG)
         # -------

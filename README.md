@@ -17,16 +17,29 @@ Clone the project into your local directory
 ```
 Install dependencies:
 - [pyKBoot](https://github.com/molejar/pyKBoot)
-- [wxPython](https://github.com/wxWidgets/wxPython) - In Windows use following instalers: [wxPython3.0-win32-py27](http://downloads.sourceforge.net/wxpython/wxPython3.0-win32-3.0.2.0-py27.exe), [wxPython3.0-win64-py27](http://downloads.sourceforge.net/wxpython/wxPython3.0-win64-3.0.2.0-py27.exe)
+- [wxPython](https://github.com/wxWidgets/wxPython) (Windows users can use following installers: [wxPython3.0-win32-py27](http://downloads.sourceforge.net/wxpython/wxPython3.0-win32-3.0.2.0-py27.exe) or [wxPython3.0-win64-py27](http://downloads.sourceforge.net/wxpython/wxPython3.0-win64-3.0.2.0-py27.exe))
 
 Usage
 -----
 
-Go into `KBootGUI` directory and execute `kboot-gui.py`. 
+Go into `KBootGUI` directory and execute `python kboot-gui.py` in terminal or just `kboot-gui.py` in windows commander. 
+
+Create One Executable File
+--------------------------
+
+KBoot GUI is written in Python language, what means that you need have installed Python interpreter on your computer. This condition can be restrictive for somebody and therefore exist option how to build KBoot GUI into one executable file. All what you need is to run following commands in terminal:
+
+``` bash
+    $ pip install pyinstaller
+    $ cd KBootGUI
+    $ python pyinstaller -F -w kboot-gui.py
+```
+If the build was successful, then in `./dist` folder will locate the executable file of `kboot-gui.py`
 
 TODO
 ----
 
-- Add UART interface support
+- Add support for UART interface
 - Add KBOOT configuration area parser and editor
 - Add USB hotplug detection
+
