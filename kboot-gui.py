@@ -32,7 +32,6 @@ from kboot import *
 from intelhex import IntelHex
 from flufl.enum import IntEnum
 
-
 mylogger = logging.getLogger()
 
 
@@ -41,7 +40,7 @@ EVT_RESULT_ID = wx.NewId()
 
 def EVT_RESULT(win, func):
     """Define Result Event."""
-    win.Connect(-1, -1, EVT_RESULT_ID, func)
+    win.Connect(wx.ID_ANY, wx.ID_ANY, EVT_RESULT_ID, func)
 
 
 class ResultEvent(wx.PyEvent):
@@ -144,6 +143,15 @@ class KBootAppMain(AppMain):
     ER_Len = 0
     RD_StartAddr = 0
     RD_Len = 0
+    KEYVALUE = bytearray([0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38]) # 12345678
+
+    # Supported baudrates
+    UART_BR = (600, 1200, 1800, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 500000, 576000, 921600)
+
+    # Supported images
+    WILDCARD = "Motorola Image (*.S19,*.srec)|*.s19;*.S19;*.srec|" \
+               "IntelHEX Image (*.hex)|*.hex;*.Hex;*.HEX|" \
+               "Binary Image (*.bin)|*.bin;*.Bin;*.BIN"
 
     def __init__(self, parent):
         AppMain.__init__(self, parent)
@@ -157,7 +165,7 @@ class KBootAppMain(AppMain):
         self.m_pg_min_update_wait = 50
         self.m_pg_last_update_time = None
         self.start_addr = 0
-        self.data_buffer = []
+        self.data_buffer = bytearray()
         self.operation = None
         self.worker = None
         # -------
@@ -170,13 +178,18 @@ class KBootAppMain(AppMain):
         # -------
         self.m_dvlcDataBuff.AppendTextColumn("Address", width=95, align=wx.ALIGN_CENTER, flags=16)
         for i in range(16):
-            #self.m_dvlcDataBuff.AppendTextColumn("{:01X}".format(i), width=26, align=wx.ALIGN_CENTER,
-            #                                     mode=dw.DATAVIEW_CELL_EDITABLE, flags=16)
             self.m_dvlcDataBuff.AppendTextColumn("{:01X}".format(i), width=26, align=wx.ALIGN_CENTER, flags=16)
         self.m_dvlcDataBuff.AppendTextColumn("0123456789ABCDEF", width=140, align=wx.ALIGN_CENTER)
         # -------
+        self.m_pUnlock = self.m_pGridOptions.Append(pg.PropertyCategory(u"Unlock CMD", u"UnlockCMD"))
+        self.m_pUMode = self.m_pGridOptions.Append(pg.EnumProperty(u"Mode", u"UMode",
+                                                                  ['Default (Mass Erase)',
+                                                                   'Use Backdoor Key in ASCII Format',
+                                                                   'Use Backdoor Key in HEX Format'], [0, 1, 2], 0))
+        self.m_pUKey = self.m_pGridOptions.Append(pg.StringProperty(u"Key Value", u"UKey", "12345678"))
+        self.m_pUKey.Enable(False)
         self.m_pErase = self.m_pGridOptions.Append(pg.PropertyCategory(u"Erase CMD", u"EraseCMD"))
-        self.m_pEDef = self.m_pGridOptions.Append(pg.EnumProperty(u"Mode", u"Mode",
+        self.m_pEDef = self.m_pGridOptions.Append(pg.EnumProperty(u"Mode", u"EMode",
                                                                   ['Mass Erase', 'Sector Erase'], [0, 1], 0))
         self.m_pESAddr = self.m_pGridOptions.Append(pg.StringProperty(u"Start Address", u"ESAddr", "0x0"))
         self.m_pELen = self.m_pGridOptions.Append(pg.StringProperty(u"Length", u"ELen", "0x0"))
@@ -191,7 +204,17 @@ class KBootAppMain(AppMain):
         self.m_pRSAddr = self.m_pGridOptions.Append(pg.StringProperty(u"Start Address", u"RSAddr", "0x0"))
         self.m_pRLen = self.m_pGridOptions.Append(pg.StringProperty(u"Length", u"RLen", "0x0"))
         self.m_pGridOptions.Disable()
-        #self.m_pGridOptions.Show(False)
+        # ------
+        #self.m_panel3.Show(False)
+        self.m_pBDKey = self.m_pGridFCA.Append(pg.PropertyCategory(u"BackDoor Key", u"BackDoorKey"))
+        self.m_pBKFM = self.m_pGridFCA.Append(pg.EnumProperty(u"Key Format", u"BKFormat",
+                                                                  ['In ASCII Value',
+                                                                   'In HEX Value'], [0, 1], 0))
+        self.m_pBDKeyVal = self.m_pGridFCA.Append(pg.StringProperty(u"Key Value", u"BDKey", "12345678"))
+
+        self.m_pFLProt = self.m_pGridFCA.Append(pg.PropertyCategory(u"FLASH Protection", u"FLProt"))
+        # -------
+        self.m_panel4.Show(False)
         # -------
         self.m_dvlcDataBuff.SetForegroundColour(wx.Colour(10, 145, 40))
         self.m_dvlcDataBuff.SetBackgroundColour(wx.Colour(32, 32, 32))
@@ -209,11 +232,15 @@ class KBootAppMain(AppMain):
         self.m_tcTime.Disable()
         self.m_tcState.SetValue('Status')
         self.m_tcState.Disable()
-        # Set up event handler for any worker thread results
-        EVT_RESULT(self, self.OnResult)
+
+        self.m_chBaudrate.AppendItems([str(c) for c in self.UART_BR])
+        self.m_chBaudrate.SetSelection(9)
 
         self.m_gProgBar.SetRange(1000)
         self.kboot.set_handler(self.update_progressbar, 0, self.m_gProgBar.GetRange())
+
+        # Set up event handler for any worker thread results
+        EVT_RESULT(self, self.OnResult)
 
         self.m_pGridOptions.Bind(pg.EVT_PG_CHANGED, self.OnCmdOpsChanger)
 
@@ -243,9 +270,16 @@ class KBootAppMain(AppMain):
         self.m_bWrite.Disable()
 
     def connect(self):
-        self.kboot.connect(self.devs[self.m_chDevice.GetSelection()])
+        if self.m_mUsbHid.IsChecked():
+            self.kboot.connect_usb(self.devs[self.m_chDevice.GetSelection()])
+        else:
+            self.kboot.connect_uart(self.devs[self.m_chDevice.GetSelection()],
+                                    self.UART_BR[self.m_chBaudrate.GetSelection()])
         if self.get_mcu_info():
+            self.m_mUsbHid.Enable(False)
+            self.m_mUart.Enable(False)
             self.m_bConnect.LabelText = 'Disconnect'
+            self.m_chBaudrate.Disable()
             self.m_chDevice.Disable()
             self.m_bRefresh.Disable()
             self.m_gProgBar.Enable()
@@ -270,7 +304,10 @@ class KBootAppMain(AppMain):
         self.kboot.disconnect()
         self.scan_for_dev()
         self.ctrlbt_disable()
+        self.m_mUsbHid.Enable(True)
+        self.m_mUart.Enable(True)
         self.m_bConnect.LabelText = 'Connect'
+        self.m_chBaudrate.Enable()
         self.m_chDevice.Enable()
         self.m_bRefresh.Enable()
         self.m_dvlcMcuInfo.DeleteAllItems()
@@ -370,12 +407,11 @@ class KBootAppMain(AppMain):
 
     def load_image(self, path):
         retst = True
-        self.data_buffer = []
+        self.data_buffer = bytearray()
         if path.lower().endswith('.bin'):
             with open(path, "rb") as f:
-                raw_data = f.read()
+                self.data_buffer = f.read()
                 f.close()
-            self.data_buffer = struct.unpack("%iB" % len(raw_data), raw_data)
         elif path.lower().endswith('.hex'):
             ihex = IntelHex()
             try:
@@ -385,7 +421,7 @@ class KBootAppMain(AppMain):
                 retst = False
             else:
                 dhex = ihex.todict()
-                self.data_buffer = [0xFF]*(max(dhex.keys()) + 1)
+                self.data_buffer = bytearray([0xFF]*(max(dhex.keys()) + 1))
                 for i, val in dhex.items():
                     self.data_buffer[i] = val
         elif path.lower().endswith(('.s19', '.srec')):
@@ -406,7 +442,7 @@ class KBootAppMain(AppMain):
         if self.data_buffer:
             if path.lower().endswith('.bin'):
                 with open(path, "wb") as f:
-                    f.write(bytearray(self.data_buffer))
+                    f.write(self.data_buffer)
                     f.close()
             elif path.lower().endswith('.hex'):
                 ihex = IntelHex()
@@ -432,14 +468,22 @@ class KBootAppMain(AppMain):
 
     def scan_for_dev(self):
         self.m_chDevice.Clear()
-        self.devs = self.kboot.scan_usb_devs()
+        if self.m_mUsbHid.IsChecked():
+            self.devs = self.kboot.scan_usb_devs()
+        else:
+            self.devs = self.kboot.scan_uart_ports()
         if self.devs:
             self.m_chDevice.Enable()
+            self.m_chBaudrate.Enable()
             self.m_bConnect.Enable()
             for dev in self.devs:
-                self.m_chDevice.Append(dev.getInfo())
+                if self.m_mUsbHid.IsChecked():
+                    self.m_chDevice.Append(dev.getInfo())
+                else:
+                    self.m_chDevice.Append(dev)
             self.m_chDevice.SetSelection(0)
         else:
+            self.m_chBaudrate.Disable()
             self.m_chDevice.Disable()
             self.m_bConnect.Disable()
 
@@ -460,10 +504,8 @@ class KBootAppMain(AppMain):
         event.Skip()
 
     def OnOpen(self, event):
-        wildcard = "Binary Image (*.bin)|*.bin;*.Bin;*.BIN|"   \
-                   "IntelHEX Image (*.hex)|*.hex;*.Hex;*.HEX|" \
-                   "Motorola Image (*.S19,*.srec)|*.s19;*.S19;*.srec"
-        dialog = wx.FileDialog(self, "Choose a file", os.getcwd(), "", wildcard, wx.OPEN | wx.FD_FILE_MUST_EXIST)
+
+        dialog = wx.FileDialog(self, "Choose a file", os.getcwd(), "", self.WILDCARD, wx.OPEN | wx.FD_FILE_MUST_EXIST)
         if dialog.ShowModal() == wx.ID_OK:
             path = dialog.GetPaths()[0]
             if self.load_image(path):
@@ -478,10 +520,7 @@ class KBootAppMain(AppMain):
 
     def OnSave(self, event):
         file_ext = ('.bin', '.hex', '.s19', '.srec')
-        wildcard = "Binary Image (*.bin)|*.bin;*.Bin;*.BIN|"   \
-                   "IntelHEX Image (*.hex)|*.hex;*.Hex;*.HEX|" \
-                   "Motorola Image (*.S19,*.srec)|*.s19;*.S19;*.srec"
-        dialog = wx.FileDialog(self, "Save to file", os.getcwd(), "image", wildcard, wx.SAVE)
+        dialog = wx.FileDialog(self, "Save to file", os.getcwd(), "image", self.WILDCARD, wx.SAVE)
         if dialog.ShowModal() == wx.ID_OK:
             path = dialog.GetPaths()[0]
             if not path.lower().endswith(file_ext):
@@ -491,9 +530,19 @@ class KBootAppMain(AppMain):
         event.Skip()
 
     def OnSelUsbHid(self, event):
+        self.m_stxDevice.SetLabel('USB Device:')
+        self.m_stBaudrate.Hide()
+        self.m_chBaudrate.Hide()
+        self.Layout()
+        self.scan_for_dev()
         event.Skip()
 
     def OnSelUart(self, event):
+        self.m_stxDevice.SetLabel('RS232 Port :')
+        self.m_stBaudrate.Show()
+        self.m_chBaudrate.Show()
+        self.Layout()
+        self.scan_for_dev()
         event.Skip()
 
     def OnSettings(self, event):
@@ -504,7 +553,7 @@ class KBootAppMain(AppMain):
         info.SetName('KBoot GUI')
         info.SetVersion('0.1 Beta')
         info.SetDescription("KBoot GUI is PC side user interface fo Kinetis bootloader")
-        info.SetCopyright('(C) 2014 - 2016 Martin Olejar')
+        info.SetCopyright('(C) 2016 Martin Olejar')
         info.SetWebSite('https://github.com/molejar')
         wx.AboutBox(info)
         event.Skip()
@@ -517,7 +566,10 @@ class KBootAppMain(AppMain):
     def OnUnlock(self, event):
         self.task_begin()
         try:
-            self.kboot.flash_erase_all_unsecure()
+            if self.m_pUMode.GetValue() == 0:
+                self.kboot.flash_erase_all_unsecure()
+            else:
+                self.kboot.flash_security_disable(self.KEYVALUE)
         except:
             self.task_end(False)
         else:
@@ -589,8 +641,36 @@ class KBootAppMain(AppMain):
 
     def OnCmdOpsChanger(self, event):
         prop = event.GetProperty()
-        if prop.GetValueType() == 'string':
-            getval = prop.GetValue()
+        getval = prop.GetValue()
+        if prop.GetName() == 'UMode':
+            if getval == 1:
+                self.m_pUKey.SetValue(array_to_string(self.KEYVALUE, '', 'c'))
+            elif getval == 2:
+                self.m_pUKey.SetValue(array_to_string(self.KEYVALUE, ' ')[:-1])
+        elif prop.GetName() == 'UKey':
+            if self.m_pUMode.GetValue() == 1:
+                if len(getval) != 8:
+                    self.m_pUKey.SetValue(array_to_string(self.KEYVALUE, '', 'c'))
+                    wx.MessageBox(" Key Value \"%s\" hasn\'t correct length !\n\n Use 8 ASCII Chars"
+                              % getval, 'ERROR', wx.OK|wx.ICON_ERROR)
+                self.KEYVALUE = string_to_array(self.m_pUKey.GetValue(), 1, 0)
+            if self.m_pUMode.GetValue() == 2:
+                getval = getval.replace(' ', '')
+                print(getval)
+                if len(getval) != 16:
+                    self.m_pUKey.SetValue(array_to_string(self.KEYVALUE, ' ')[:-1])
+                    wx.MessageBox(" Key Value \"%s\" hasn\'t correct length !\n\n Use 8 HEX Chars"
+                          % getval, 'ERROR', wx.OK|wx.ICON_ERROR)
+                else:
+                    try:
+                        tmp = string_to_array(getval, 2, 16)
+                    except:
+                        self.m_pUKey.SetValue(array_to_string(self.KEYVALUE, ' ')[:-1])
+                        wx.MessageBox(" Key Value \"%s\" hasn\'t correct hex chars !\n\n Use Chars in range 0 - F"
+                              % getval, 'ERROR', wx.OK|wx.ICON_ERROR)
+                    else:
+                        self.KEYVALUE = tmp
+        elif prop.GetValueType() == 'string':
             try:
                 val = int(getval, 0)
             except:
@@ -598,7 +678,7 @@ class KBootAppMain(AppMain):
                     prop.SetValue('0x{:X}'.format(self.ER_StartAddr))
                 elif prop.GetName() == 'ELen':
                     prop.SetValue('0x{:X}'.format(self.ER_Len))
-                elif prop.GetName() == 'Offset':
+                elif prop.GetName() == 'WROffset':
                     prop.SetValue('0x{:X}'.format(self.WR_Offset))
                 elif prop.GetName() == 'RSAddr':
                     prop.SetValue('0x{:X}'.format(self.RD_StartAddr))
@@ -621,14 +701,19 @@ class KBootAppMain(AppMain):
                                       % self.FlashSectorSize, 'ERROR', wx.OK|wx.ICON_ERROR)
                     else:
                         self.ER_Len = val
-                elif prop.GetName() == 'Offset':
+                elif prop.GetName() == 'WROffset':
                     self.WR_Offset = val
                 elif prop.GetName() == 'RSAddr':
                     self.RD_StartAddr = val
                 elif prop.GetName() == 'RLen':
                     self.RD_Len = val
 
-        if prop.GetName() == 'Mode':
+        if prop.GetName() == 'UMode':
+            if prop.GetValue() == 0:
+                self.m_pUKey.Enable(False)
+            else:
+                self.m_pUKey.Enable(True)
+        if prop.GetName() == 'EMode':
             if prop.GetValue() == 0:
                 self.m_pESAddr.Enable(False)
                 self.m_pELen.Enable(False)
@@ -665,7 +750,7 @@ class KBootAppMain(AppMain):
 class MyApp(wx.App):
     def OnInit(self):
         frame = KBootAppMain(None)
-        frame.Show(True)
+        frame.Show()
         return True
 
 

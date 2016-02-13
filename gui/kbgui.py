@@ -46,7 +46,6 @@ class AppMain ( wx.Frame ):
 		
 		self.m_mUart = wx.MenuItem( self.m_mInterface, wx.ID_ANY, u"&RS232", wx.EmptyString, wx.ITEM_RADIO )
 		self.m_mInterface.AppendItem( self.m_mUart )
-		self.m_mUart.Enable( False )
 		
 		self.m_menubar.Append( self.m_mInterface, u"&Interface" ) 
 		
@@ -73,7 +72,7 @@ class AppMain ( wx.Frame ):
 		fgSizer.SetFlexibleDirection( wx.BOTH )
 		fgSizer.SetNonFlexibleGrowMode( wx.FLEX_GROWMODE_ALL )
 		
-		fgSizer2 = wx.FlexGridSizer( 0, 4, 0, 0 )
+		fgSizer2 = wx.FlexGridSizer( 0, 5, 0, 0 )
 		fgSizer2.AddGrowableCol( 1 )
 		fgSizer2.SetFlexibleDirection( wx.BOTH )
 		fgSizer2.SetNonFlexibleGrowMode( wx.FLEX_GROWMODE_SPECIFIED )
@@ -88,6 +87,24 @@ class AppMain ( wx.Frame ):
 		self.m_chDevice.SetFont( wx.Font( wx.NORMAL_FONT.GetPointSize(), 70, 90, 92, False, wx.EmptyString ) )
 		
 		fgSizer2.Add( self.m_chDevice, 1, wx.ALIGN_CENTER_VERTICAL|wx.ALL|wx.EXPAND, 5 )
+		
+		bSizer6 = wx.BoxSizer( wx.HORIZONTAL )
+		
+		self.m_stBaudrate = wx.StaticText( self, wx.ID_ANY, u"BaudRate:", wx.DefaultPosition, wx.DefaultSize, 0 )
+		self.m_stBaudrate.Wrap( -1 )
+		self.m_stBaudrate.Hide()
+		
+		bSizer6.Add( self.m_stBaudrate, 0, wx.ALIGN_CENTER_VERTICAL|wx.TOP|wx.BOTTOM|wx.LEFT, 5 )
+		
+		m_chBaudrateChoices = []
+		self.m_chBaudrate = wx.Choice( self, wx.ID_ANY, wx.DefaultPosition, wx.Size( 100,-1 ), m_chBaudrateChoices, 0 )
+		self.m_chBaudrate.SetSelection( 0 )
+		self.m_chBaudrate.Hide()
+		
+		bSizer6.Add( self.m_chBaudrate, 0, wx.ALIGN_CENTER_HORIZONTAL|wx.ALIGN_CENTER_VERTICAL|wx.ALL, 5 )
+		
+		
+		fgSizer2.Add( bSizer6, 1, wx.EXPAND|wx.ALIGN_CENTER_HORIZONTAL|wx.ALIGN_CENTER_VERTICAL, 5 )
 		
 		self.m_bRefresh = wx.Button( self, wx.ID_ANY, u"Refresh", wx.DefaultPosition, wx.Size( 70,-1 ), 0 )
 		fgSizer2.Add( self.m_bRefresh, 0, wx.ALIGN_CENTER_VERTICAL|wx.ALL|wx.SHAPED, 2 )
@@ -106,6 +123,7 @@ class AppMain ( wx.Frame ):
 		self.m_notebook1 = wx.Notebook( self, wx.ID_ANY, wx.DefaultPosition, wx.Size( -1,370 ), wx.NB_FIXEDWIDTH|wx.NB_TOP )
 		self.m_panel1 = wx.Panel( self.m_notebook1, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.TAB_TRAVERSAL )
 		self.m_panel1.SetBackgroundColour( wx.SystemSettings.GetColour( wx.SYS_COLOUR_MENU ) )
+		self.m_panel1.SetToolTipString( u"KBOOT Properties of Connected MCU" )
 		
 		bSizer3 = wx.BoxSizer( wx.VERTICAL )
 		
@@ -162,6 +180,40 @@ class AppMain ( wx.Frame ):
 		self.m_panel2.Layout()
 		fgSizer4.Fit( self.m_panel2 )
 		self.m_notebook1.AddPage( self.m_panel2, u"Data Buffer", False )
+		self.m_panel3 = wx.Panel( self.m_notebook1, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.TAB_TRAVERSAL )
+		self.m_panel3.SetBackgroundColour( wx.SystemSettings.GetColour( wx.SYS_COLOUR_MENU ) )
+		
+		fgSizer6 = wx.FlexGridSizer( 0, 0, 0, 0 )
+		fgSizer6.AddGrowableCol( 0 )
+		fgSizer6.AddGrowableRow( 0 )
+		fgSizer6.SetFlexibleDirection( wx.BOTH )
+		fgSizer6.SetNonFlexibleGrowMode( wx.FLEX_GROWMODE_SPECIFIED )
+		
+		self.m_pGridFCA = pg.PropertyGrid(self.m_panel3, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.propgrid.PG_BOLD_MODIFIED|wx.propgrid.PG_DEFAULT_STYLE|wx.propgrid.PG_SPLITTER_AUTO_CENTER)
+		fgSizer6.Add( self.m_pGridFCA, 1, wx.ALL|wx.EXPAND|wx.ALIGN_CENTER_HORIZONTAL|wx.ALIGN_CENTER_VERTICAL, 5 )
+		
+		
+		self.m_panel3.SetSizer( fgSizer6 )
+		self.m_panel3.Layout()
+		fgSizer6.Fit( self.m_panel3 )
+		self.m_notebook1.AddPage( self.m_panel3, u"FCA Editor", False )
+		self.m_panel4 = wx.Panel( self.m_notebook1, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.TAB_TRAVERSAL )
+		self.m_panel4.SetBackgroundColour( wx.SystemSettings.GetColour( wx.SYS_COLOUR_MENU ) )
+		
+		fgSizer61 = wx.FlexGridSizer( 0, 0, 0, 0 )
+		fgSizer61.AddGrowableCol( 0 )
+		fgSizer61.AddGrowableRow( 0 )
+		fgSizer61.SetFlexibleDirection( wx.BOTH )
+		fgSizer61.SetNonFlexibleGrowMode( wx.FLEX_GROWMODE_SPECIFIED )
+		
+		self.m_pGridBCA = pg.PropertyGrid(self.m_panel4, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.propgrid.PG_BOLD_MODIFIED|wx.propgrid.PG_DEFAULT_STYLE|wx.propgrid.PG_SPLITTER_AUTO_CENTER)
+		fgSizer61.Add( self.m_pGridBCA, 1, wx.ALL|wx.EXPAND|wx.ALIGN_CENTER_HORIZONTAL|wx.ALIGN_CENTER_VERTICAL, 5 )
+		
+		
+		self.m_panel4.SetSizer( fgSizer61 )
+		self.m_panel4.Layout()
+		fgSizer61.Fit( self.m_panel4 )
+		self.m_notebook1.AddPage( self.m_panel4, u"BCA Editor", False )
 		self.m_panel5 = wx.Panel( self.m_notebook1, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.TAB_TRAVERSAL )
 		self.m_panel5.SetBackgroundColour( wx.SystemSettings.GetColour( wx.SYS_COLOUR_MENU ) )
 		
@@ -177,8 +229,8 @@ class AppMain ( wx.Frame ):
 		self.m_panel5.Layout()
 		bSizer51.Fit( self.m_panel5 )
 		self.m_notebook1.AddPage( self.m_panel5, u"CMD Options", False )
-		self.m_panel7 = wx.Panel( self.m_notebook1, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.TAB_TRAVERSAL )
-		self.m_panel7.SetBackgroundColour( wx.SystemSettings.GetColour( wx.SYS_COLOUR_MENU ) )
+		self.m_panel6 = wx.Panel( self.m_notebook1, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, wx.TAB_TRAVERSAL )
+		self.m_panel6.SetBackgroundColour( wx.SystemSettings.GetColour( wx.SYS_COLOUR_MENU ) )
 		
 		fgSizer3 = wx.FlexGridSizer( 2, 0, 0, 0 )
 		fgSizer3.AddGrowableCol( 0 )
@@ -186,7 +238,7 @@ class AppMain ( wx.Frame ):
 		fgSizer3.SetFlexibleDirection( wx.BOTH )
 		fgSizer3.SetNonFlexibleGrowMode( wx.FLEX_GROWMODE_SPECIFIED )
 		
-		self.m_tcLogger = wx.TextCtrl( self.m_panel7, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, wx.TE_DONTWRAP|wx.TE_MULTILINE|wx.TE_NOHIDESEL|wx.TE_READONLY )
+		self.m_tcLogger = wx.TextCtrl( self.m_panel6, wx.ID_ANY, wx.EmptyString, wx.DefaultPosition, wx.DefaultSize, wx.TE_DONTWRAP|wx.TE_MULTILINE|wx.TE_NOHIDESEL|wx.TE_READONLY )
 		self.m_tcLogger.SetFont( wx.Font( wx.NORMAL_FONT.GetPointSize(), 70, 90, 90, False, wx.EmptyString ) )
 		self.m_tcLogger.SetForegroundColour( wx.SystemSettings.GetColour( wx.SYS_COLOUR_WINDOW ) )
 		self.m_tcLogger.SetBackgroundColour( wx.SystemSettings.GetColour( wx.SYS_COLOUR_WINDOW ) )
@@ -195,12 +247,12 @@ class AppMain ( wx.Frame ):
 		
 		bSizer5 = wx.BoxSizer( wx.HORIZONTAL )
 		
-		self.m_staticText3 = wx.StaticText( self.m_panel7, wx.ID_ANY, u"Level:", wx.DefaultPosition, wx.DefaultSize, 0 )
+		self.m_staticText3 = wx.StaticText( self.m_panel6, wx.ID_ANY, u"Level:", wx.DefaultPosition, wx.DefaultSize, 0 )
 		self.m_staticText3.Wrap( -1 )
 		bSizer5.Add( self.m_staticText3, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, 5 )
 		
 		m_chLogLevelChoices = [ u"Debug", u"Info", u"Error" ]
-		self.m_chLogLevel = wx.Choice( self.m_panel7, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, m_chLogLevelChoices, 0 )
+		self.m_chLogLevel = wx.Choice( self.m_panel6, wx.ID_ANY, wx.DefaultPosition, wx.DefaultSize, m_chLogLevelChoices, 0 )
 		self.m_chLogLevel.SetSelection( 0 )
 		self.m_chLogLevel.SetForegroundColour( wx.SystemSettings.GetColour( wx.SYS_COLOUR_WINDOWTEXT ) )
 		
@@ -209,20 +261,20 @@ class AppMain ( wx.Frame ):
 		
 		bSizer5.AddSpacer( ( 0, 0), 1, wx.EXPAND, 5 )
 		
-		self.m_bClearLog = wx.Button( self.m_panel7, wx.ID_ANY, u"Clear", wx.DefaultPosition, wx.Size( 70,-1 ), 0 )
+		self.m_bClearLog = wx.Button( self.m_panel6, wx.ID_ANY, u"Clear", wx.DefaultPosition, wx.Size( 70,-1 ), 0 )
 		bSizer5.Add( self.m_bClearLog, 0, wx.ALL, 5 )
 		
-		self.m_bSaveLog = wx.Button( self.m_panel7, wx.ID_ANY, u"Save", wx.DefaultPosition, wx.Size( 70,-1 ), 0 )
+		self.m_bSaveLog = wx.Button( self.m_panel6, wx.ID_ANY, u"Save", wx.DefaultPosition, wx.Size( 70,-1 ), 0 )
 		bSizer5.Add( self.m_bSaveLog, 0, wx.ALL, 5 )
 		
 		
 		fgSizer3.Add( bSizer5, 1, wx.EXPAND|wx.RIGHT|wx.LEFT|wx.ALIGN_CENTER_VERTICAL, 5 )
 		
 		
-		self.m_panel7.SetSizer( fgSizer3 )
-		self.m_panel7.Layout()
-		fgSizer3.Fit( self.m_panel7 )
-		self.m_notebook1.AddPage( self.m_panel7, u"Logger", False )
+		self.m_panel6.SetSizer( fgSizer3 )
+		self.m_panel6.Layout()
+		fgSizer3.Fit( self.m_panel6 )
+		self.m_notebook1.AddPage( self.m_panel6, u"Logger", False )
 		
 		fgSizer.Add( self.m_notebook1, 1, wx.ALIGN_CENTER_HORIZONTAL|wx.ALIGN_CENTER_VERTICAL|wx.EXPAND|wx.ALL, 5 )
 		
